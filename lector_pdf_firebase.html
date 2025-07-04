@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lector PDF con Firebase</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #pdf-content { margin-top: 20px; line-height: 1.6; }
+    .word { cursor: pointer; padding: 2px; border-radius: 3px; }
+    .word:hover { background-color: #d0ebff; }
+    .tooltip {
+      position: absolute;
+      background-color: #fff3cd;
+      border: 1px solid #ffeeba;
+      padding: 5px 10px;
+      font-size: 14px;
+      border-radius: 5px;
+      display: none;
+      z-index: 1000;
+    }
+    input[type="file"] { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Lector de PDF con Notas Sincronizadas</h2>
+  <input type="file" id="pdf-upload" accept="application/pdf" />
+  <div id="pdf-content"></div>
+  <div id="tooltip" class="tooltip"></div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCgJhlCmac3Vhgl6qIXGW9jR3-6c58rBO8",
+      authDomain: "prueba-1-60450.firebaseapp.com",
+      projectId: "prueba-1-60450",
+      storageBucket: "prueba-1-60450.appspot.com",
+      messagingSenderId: "478382752113",
+      appId: "1:478382752113:web:106542efb381ffb8b4b6d0",
+      measurementId: "G-GVXR9Z8FCE"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    const pdfUpload = document.getElementById("pdf-upload");
+    const pdfContent = document.getElementById("pdf-content");
+    const tooltip = document.getElementById("tooltip");
+
+    const notesRef = db.collection("notes");
+    let wordNotes = {};
+
+    async function loadNotes() {
+      const snapshot = await notesRef.get();
+      snapshot.forEach(doc => {
+        wordNotes[doc.id] = doc.data().note;
+      });
+    }
+
+    function renderWords(text) {
+      pdfContent.innerHTML = "";
+      const words = text.split(/\s+/);
+      words.forEach(word => {
+        const span = document.createElement("span");
+        span.textContent = word + " ";
+        span.className = "word";
+
+        span.onclick = async () => {
+          const note = prompt("Traducción o nota para: " + word, wordNotes[word] || "");
+          if (note !== null) {
+            wordNotes[word] = note;
+            await notesRef.doc(word).set({ note });
+          }
+        };
+
+        span.onmouseover = e => {
+          if (wordNotes[word]) {
+            tooltip.textContent = wordNotes[word];
+            tooltip.style.left = e.pageX + "px";
+            tooltip.style.top = e.pageY + "px";
+            tooltip.style.display = "block";
+          }
+        };
+
+        span.onmouseout = () => {
+          tooltip.style.display = "none";
+        };
+
+        pdfContent.appendChild(span);
+      });
+    }
+
+    pdfUpload.addEventListener("change", async function () {
+      const file = this.files[0];
+      if (!file) return;
+      await loadNotes();
+
+      const fileReader = new FileReader();
+      fileReader.onload = function () {
+        const typedarray = new Uint8Array(this.result);
+
+        pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+          let text = "";
+          const total = pdf.numPages;
+          let count = 0;
+
+          for (let i = 1; i <= total; i++) {
+            pdf.getPage(i).then(page => {
+              page.getTextContent().then(content => {
+                const pageText = content.items.map(item => item.str).join(" ");
+                text += pageText + " ";
+                count++;
+                if (count === total) {
+                  renderWords(text);
+                }
+              });
+            });
+          }
+        });
+      };
+      fileReader.readAsArrayBuffer(file);
+    });
+  </script>
+</body>
+</html>
